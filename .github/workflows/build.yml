@@ -28,7 +28,7 @@ jobs:
         run: |
           TARGET_HTML="${{ github.event.inputs.html_name }}"
           if [ -z "$TARGET_HTML" ]; then
-            TARGET_HTML="Car Chase.html"
+            TARGET_HTML="Car chase.html"
           fi
 
           if [ ! -f "$TARGET_HTML" ]; then
