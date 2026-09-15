@@ -1,0 +1,98 @@
+name: Build Single HTML to APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+    inputs:
+      html_name:
+        description: 'HTML file name (e.g. index.html)'
+        required: true
+        default: 'index.html'
+      app_name:
+        description: 'App Display Name'
+        required: true
+        default: 'My Web App'
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Locate and Prepare HTML File
+        run: |
+          TARGET_HTML="${{ github.event.inputs.html_name }}"
+          if [ -z "$TARGET_HTML" ]; then
+            TARGET_HTML="Car Chase.html"
+          fi
+
+          if [ ! -f "$TARGET_HTML" ]; then
+            echo "Error: Could not find file named '$TARGET_HTML'!"
+            exit 1
+          fi
+
+          # Create web directory and copy HTML as main entry point
+          mkdir -p www
+          cp "$TARGET_HTML" www/index.html
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Java JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Install Capacitor & Dependencies
+        run: |
+          npm init -y
+          npm install -D @capacitor/cli
+          npm install @capacitor/core @capacitor/android
+
+          APP_TITLE="${{ github.event.inputs.app_name }}"
+          if [ -z "$APP_TITLE" ]; then
+            APP_TITLE="My Web App"
+          fi
+
+          npx cap init "$APP_TITLE" "com.app.standalone" --web-dir "www"
+
+      - name: Add Android Platform & Sync
+        run: |
+          npx cap add android
+          npx cap sync android
+
+      - name: Configure Navigation & File Access
+        run: |
+          node -e '
+          const fs = require("fs");
+          const configPath = "capacitor.config.json";
+          if (fs.existsSync(configPath)) {
+            let config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+            config.server = config.server || {};
+            config.server.allowNavigation = ["*"];
+            config.android = config.android || {};
+            config.android.allowMixedContent = true;
+            fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+          }
+          '
+          npx cap copy android
+
+      - name: Build Debug APK with Gradle
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: standalone-app-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
